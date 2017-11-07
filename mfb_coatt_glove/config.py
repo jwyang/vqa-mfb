@@ -6,7 +6,7 @@ VAL_BATCH_SIZE = 32
 PRINT_INTERVAL = 100
 VALIDATE_INTERVAL = 5000 
 MAX_ITERATIONS = 100000
-RESTORE_ITER = 0 # iteration to restore. *.solverstate file is needed!
+RESTORE_ITER = 5000 # iteration to restore. *.solverstate file is needed!
 # what data to use for training
 TRAIN_DATA_SPLITS = 'train+val'
 # what data to use for the vocabulary

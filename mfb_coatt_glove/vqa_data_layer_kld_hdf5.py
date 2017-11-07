@@ -3,6 +3,8 @@ import numpy as np
 import re, json, random
 import config
 import spacy
+import os
+import h5py
 import pdb
 
 QID_KEY_SEPARATOR = '/'
@@ -20,6 +22,9 @@ class VQADataProvider:
         self.mode = mode
         self.qdic, self.adic = VQADataProvider.load_data(mode)
 
+        self.dir_extract = os.path.join(config.options['dir']['root'],
+                                      'extract', 'arch,' + config.options['model']['arch'])                                      
+        self.hdf5, self.ind2name, self.name2ind = self.load_hdf5_data(mode)        
         with open('./%s/vdict.json'%folder,'r') as f:
             self.vdict = json.load(f)
         with open('./%s/adict.json'%folder,'r') as f:
@@ -29,6 +34,7 @@ class VQADataProvider:
         self.nlp = spacy.load('en', vectors='en_glove_cc_300_1m_vectors')
         self.glove_dict = {} # word -> glove vector
 
+    
     @staticmethod
     def load_vqa_json(data_split):
         """
@@ -86,6 +92,31 @@ class VQADataProvider:
                 all_adic.update(adic)
         return all_qdic, all_adic
 
+    def load_hdf5_data(self, data_split_str):
+        all_hdf5, all_ind2name, all_name2ind = {}, {}, {}
+        for data_split in data_split_str.split('+'):
+            assert data_split in config.DATA_PATHS.keys(), 'unknown data split'
+            path_hdf5 = os.path.join(self.dir_extract,
+                                          data_split + 'set.hdf5')
+            assert os.path.isfile(path_hdf5), \
+                   'File not found in {}, you must extract the features first with extract.py'.format(path_hdf5)
+            hdf5_file = h5py.File(path_hdf5, 'r')#, driver='mpio', comm=MPI.COMM_WORLD)
+            all_hdf5.update({data_split: hdf5_file})
+
+            index_to_name, name_to_index = self.load_dicts(data_split)
+            all_ind2name.update({data_split: index_to_name})
+            all_name2ind.update({data_split: name_to_index})
+
+        return all_hdf5, all_ind2name, all_name2ind
+
+    def load_dicts(self, data_split):
+        self.path_fname = os.path.join(self.dir_extract, data_split + 'set.txt')
+        with open(self.path_fname, 'r') as handle:
+            self.index_to_name = handle.readlines()
+        index_to_name = [name[:-1] for name in self.index_to_name] # remove char '\n'
+        name_to_index = {name:index for index,name in enumerate(self.index_to_name)}
+        return index_to_name, name_to_index
+
     def getQuesIds(self):
         return self.qdic.keys()
 
@@ -138,7 +169,7 @@ class VQADataProvider:
         for ans in answer_list:
             if self.adict.has_key(ans):
                 prob_answer_list.append(ans)
-
+ 
         if len(prob_answer_list) == 0:
             if self.mode == 'val' or self.mode == 'test-dev' or self.mode == 'test':
                 return 'hoge'
@@ -146,7 +177,17 @@ class VQADataProvider:
                 raise Exception("This should not happen.")
         else:
             return random.choice(prob_answer_list)
- 
+
+    def extract_answer_list(self,answer_obj):
+        answer_list = [ ans['answer'] for ans in answer_obj]
+        prob_answer_vec = np.zeros(config.NUM_OUTPUT_UNITS)
+        for ans in answer_list:
+            if self.adict.has_key(ans):
+                index = self.adict[ans]
+                prob_answer_vec[index] += 1
+        prob_answer_vec =  prob_answer_vec / np.sum(prob_answer_vec)
+        return prob_answer_vec
+
     def qlist_to_vec(self, max_length, q_list):
         """
         Converts a list of words into a format suitable for the embedding layer.
@@ -200,7 +241,52 @@ class VQADataProvider:
             self.rev_adict = rev_adict
 
         return self.rev_adict[ans_symbol]
- 
+
+    def graph_encoding(self, obj, att, rel):
+        pass
+
+    def get_img_features(self, data_split, index):
+        keys = self.hdf5[data_split].keys()
+
+        if config.options['model']['ftype'] == 'graph':
+            if config.options['model']['fuse_mode'] == "obj" and "obj" in keys:
+                feat = self.hdf5[data_split]['obj'][index]
+                return feat
+            elif config.options['model']['fuse_mode'] == "obj+att" and "obj" in keys and "att" in keys:
+                obj = self.hdf5[data_split]['obj'][index]
+                att = self.hdf5[data_split]['att'][index]
+                feat = torch.cat((obj, att), 1)
+                return feat
+            elif config.options['model']['fuse_mode'] == "obj+att+rel" and "obj" in keys and "att" in keys and "rel" in keys:
+                obj = self.hdf5[data_split]['obj'][index]
+                att = self.hdf5[data_split]['att'][index]
+                rel = self.hdf5[data_split]['rel'][index]
+                feat = self.graph_encoding(obj, att, rel)
+                return feat       
+            else:
+                print(keys)
+                raise Exception("Cannot find keys in hdf5.") 
+
+        elif config.options['model']['ftype'] == "bottomup":
+            if config.options['model']['fuse_mode'] in keys:
+                mode = config.options['model']['fuse_mode']
+                x = self.hdf5[data_split][mode][index]
+                x = x.transpose(1, 0)                
+                feat = x.reshape(x.shape[0], config.IMG_FEAT_HEIGHT, config.IMG_FEAT_WIDTH)
+                return feat     
+            else:
+                print(keys)
+                raise Exception("Cannot find keys in hdf5.")
+
+        elif config.options['model']['ftype'] == "convmap":
+            if config.options['model']['fuse_mode'] in keys:
+                mode = config.options['model']['fuse_mode']
+                feat = self.hdf5[data_split][mode][index]
+                return feat     
+            else:
+                print(keys)
+                raise Exception("Cannot find keys in hdf5.") 
+
     def create_batch(self,qid_list):
 
         map_height = config.IMG_FEAT_HEIGHT
@@ -208,11 +294,10 @@ class VQADataProvider:
         qvec = (np.zeros(self.batchsize*self.max_length)).reshape(self.batchsize,self.max_length)
         cvec = (np.zeros(self.batchsize*self.max_length)).reshape(self.batchsize,self.max_length)
         ivec = (np.zeros(self.batchsize*2048*map_height*map_width)).reshape(self.batchsize,2048,map_height,map_width)
-        avec = (np.zeros(self.batchsize)).reshape(self.batchsize)
+        avec = (np.zeros(self.batchsize*config.NUM_OUTPUT_UNITS)).reshape(self.batchsize,config.NUM_OUTPUT_UNITS)
         glove_matrix = np.zeros(self.batchsize * self.max_length * GLOVE_EMBEDDING_SIZE).reshape(\
             self.batchsize, self.max_length, GLOVE_EMBEDDING_SIZE)
 
-        pdb.set_trace()
         for i,qid in enumerate(qid_list):
 
             # load raw question information
@@ -230,7 +315,11 @@ class VQADataProvider:
                 if data_split == 'genome':
                     t_ivec = np.load(config.DATA_PATHS['genome']['features_prefix'] + str(q_iid) + '.jpg.npz')['x']
                 else:
-                    t_ivec = np.load(config.DATA_PATHS[data_split]['features_prefix'] + str(q_iid).zfill(12) + '.jpg.npz')['x']
+                    im_name = config.DATA_PATHS[data_split]['img_prefix'] + str(q_iid).zfill(12) + '.jpg\n'
+                    index = self.name2ind[data_split][im_name]
+                    t_ivec = self.get_img_features(data_split, index)
+
+                    # convert t_ivec into a single feature map (dim_feat x height x width)                    
                 t_ivec = ( t_ivec / np.sqrt((t_ivec**2).sum()) )
             except:
                 t_ivec = 0.
@@ -239,9 +328,10 @@ class VQADataProvider:
             # convert answer to vec
             if self.mode == 'val' or self.mode == 'test-dev' or self.mode == 'test':
                 q_ans_str = self.extract_answer(q_ans)
+                t_avec = self.answer_to_vec(q_ans_str)
             else:
-                q_ans_str = self.extract_answer_prob(q_ans)
-            t_avec = self.answer_to_vec(q_ans_str)
+                t_avec = self.extract_answer_list(q_ans)
+            
             qvec[i,...] = t_qvec
             cvec[i,...] = t_cvec
             ivec[i,...] = t_ivec
@@ -311,7 +401,7 @@ class VQADataProviderLayer(caffe.Layer):
         top[0].reshape(15,self.batchsize)
         top[1].reshape(15,self.batchsize)
         top[2].reshape(self.batchsize,2048, config.IMG_FEAT_HEIGHT, config.IMG_FEAT_WIDTH)
-        top[3].reshape(self.batchsize)
+        top[3].reshape(self.batchsize,config.NUM_OUTPUT_UNITS)
         top[4].reshape(15,self.batchsize,GLOVE_EMBEDDING_SIZE)
 
         self.mode = json.loads(self.param_str)['mode']
@@ -328,7 +418,7 @@ class VQADataProviderLayer(caffe.Layer):
         if self.mode == 'val' or self.mode == 'test-dev' or self.mode == 'test':
             pass
         else:
-            word, cont, feature, answer, glove_matrix, _, _, _ = self.dp.get_batch_vec()
+            word, cont, feature, answer, glove_matrix, _, _, epoch_counter = self.dp.get_batch_vec()
             top[0].data[...] = np.transpose(word,(1,0)) # N x T -> T x N
             top[1].data[...] = np.transpose(cont,(1,0))
             top[2].data[...] = feature
