@@ -24,31 +24,32 @@ LSTM_DROPOUT_RATIO = 0.3
 MFB_DROPOUT_RATIO = 0.1
 
 # vqa tools - get from https://github.com/VT-vision-lab/VQA
-VQA_TOOLS_PATH = '/home/yuz/data/VQA/PythonHelperTools'
-VQA_EVAL_TOOLS_PATH = '/home/yuz/data/VQA/PythonEvaluationTools'
+VQA_TOOLS_PATH = 'data/VQA/PythonHelperTools'
+VQA_EVAL_TOOLS_PATH = 'data/VQA/PythonEvaluationTools'
 
 # location of the data
-VQA_PREFIX = '/home/yuz/data/VQA'
+VQA_PREFIX = 'data/vqa'
 
-feat = 'pool5'
+# feat = 'pool5'
+feat = 'res5c'
 DATA_PATHS = {
 	'train': {
-		'ques_file': VQA_PREFIX + '/Questions/OpenEnded_mscoco_train2014_questions.json',
-		'ans_file': VQA_PREFIX + '/Annotations/mscoco_train2014_annotations.json',
-		'features_prefix': VQA_PREFIX + '/Features/ms_coco/resnet_%s_bgrms_large/train2014/COCO_train2014_'%feat
+		'ques_file': VQA_PREFIX + '/raw/annotations/OpenEnded_mscoco_train2014_questions.json',
+		'ans_file': VQA_PREFIX + '/raw/annotations/mscoco_train2014_annotations.json',
+		'features_prefix': VQA_PREFIX + '/features/resnet_%s_bgrms_large/train2014/COCO_train2014_'%feat
 	},
 	'val': {
-		'ques_file': VQA_PREFIX + '/Questions/OpenEnded_mscoco_val2014_questions.json',
-		'ans_file': VQA_PREFIX + '/Annotations/mscoco_val2014_annotations.json',
-		'features_prefix': VQA_PREFIX + '/Features/ms_coco/resnet_%s_bgrms_large/val2014/COCO_val2014_'%feat
+		'ques_file': VQA_PREFIX + '/raw/annotations/OpenEnded_mscoco_val2014_questions.json',
+		'ans_file': VQA_PREFIX + '/raw/annotations/mscoco_val2014_annotations.json',
+		'features_prefix': VQA_PREFIX + '/features/resnet_%s_bgrms_large/val2014/COCO_val2014_'%feat
 	},
 	'test-dev': {
-		'ques_file': VQA_PREFIX + '/Questions/OpenEnded_mscoco_test-dev2015_questions.json',
-		'features_prefix': VQA_PREFIX + '/Features/ms_coco/resnet_%s_bgrms_large/test2015/COCO_test2015_'%feat
+		'ques_file': VQA_PREFIX + '/raw/annotations/OpenEnded_mscoco_test-dev2015_questions.json',
+		'features_prefix': VQA_PREFIX + '/features/resnet_%s_bgrms_large/test2015/COCO_test2015_'%feat
 	},
 	'test': {
-		'ques_file': VQA_PREFIX + '/Questions/OpenEnded_mscoco_test2015_questions.json',
-		'features_prefix': VQA_PREFIX + '/Features/ms_coco/resnet_%s_bgrms_large/test2015/COCO_test2015_'%feat
+		'ques_file': VQA_PREFIX + '/raw/annotations/OpenEnded_mscoco_test2015_questions.json',
+		'features_prefix': VQA_PREFIX + '/features/resnet_%s_bgrms_large/test2015/COCO_test2015_'%feat
 	},
 	'genome': {
 		'genome_file': VQA_PREFIX + '/Questions/OpenEnded_genome_train_questions.json',
